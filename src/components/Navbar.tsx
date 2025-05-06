@@ -1,5 +1,6 @@
 import React from 'react';
 import { Menu } from 'lucide-react';
+import { WalletConnect } from './WalletConnect';
 
 export const Navbar = () => {
   return (
@@ -14,9 +15,7 @@ export const Navbar = () => {
             <a href="#" className="text-gray-300 hover:text-cyan-400 transition-colors">Features</a>
             <a href="#" className="text-gray-300 hover:text-cyan-400 transition-colors">Documentation</a>
             <a href="#" className="text-gray-300 hover:text-cyan-400 transition-colors">About</a>
-            <button className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-gray-900 rounded-lg font-bold transition-all">
-              Launch App
-            </button>
+            <WalletConnect />
           </div>
 
           <button className="md:hidden text-gray-300 hover:text-cyan-400">
