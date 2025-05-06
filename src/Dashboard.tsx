@@ -1,73 +1,54 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Shield, AlertTriangle, Clock } from 'lucide-react';
-import { WalletConnect } from './WalletConnect';
-import { useBlockchain } from '../context/BlockchainContext';
-import { useProtocol } from '../context/ProtocolContext';
-import { ProtocolSelector } from './protocols/ProtocolSelector';
-import { ProtocolSummary } from './protocols/ProtocolSummary';
-import { contractService } from '../services/blockchain';
+import { WalletConnect } from './components/WalletConnect';
+import { useBlockchain } from './context/BlockchainContext';
+import { useProtocol } from './context/ProtocolContext';
+import { ProtocolSelector } from './components/protocols/ProtocolSelector';
+import { ProtocolSummary } from './components/protocols/ProtocolSummary';
+import { contractService } from './services/blockchain';
+import { defiLlamaService } from './services';
 
 export const Dashboard = () => {
   const { connectionState } = useBlockchain();
   const { selectedProtocol, setSelectedProtocol, setSelectedContract } = useProtocol();
+  const [isLoadingContracts, setIsLoadingContracts] = useState(false);
+  const [contractLoadError, setContractLoadError] = useState<string | null>(null);
 
   // Function to fetch protocol details when a protocol is selected
   useEffect(() => {
     const fetchProtocolDetails = async () => {
       if (selectedProtocol && selectedProtocol.contracts.length === 0) {
         try {
-          // This would be where we fetch detailed data about the selected protocol
-          // For now, we'll just log that we would fetch data
+          setIsLoadingContracts(true);
+          setContractLoadError(null);
+          
           console.log(`Fetching details for ${selectedProtocol.name}...`);
           
-          // In a real implementation, we would:
-          // 1. Call API to get protocol contracts
-          // 2. Call blockchain services to analyze contracts
-          // 3. Update the protocol with detailed data
+          // Use our DeFi Llama service to get contract details
+          // Here we prioritize BSC chain (56) as requested
+          const contracts = await defiLlamaService.getProtocolContracts(selectedProtocol.id, 56);
           
-          // Just a mock implementation to simulate loading details
-          setTimeout(() => {
-            // This is just for demonstration - in a real app, we'd fetch real contract data
-            if (selectedProtocol.id === 'uniswap' || selectedProtocol.id === 'sushiswap') {
-              const mockDexContracts = [
-                {
-                  id: `${selectedProtocol.id}-router`,
-                  name: `${selectedProtocol.name} Router`,
-                  address: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-                  type: 'DEX',
-                  description: `Main router contract for ${selectedProtocol.name}`,
-                  functions: [
-                    {
-                      id: 'fn-1',
-                      name: 'swapExactTokensForTokens',
-                      description: 'Swap an exact amount of tokens for another token',
-                      isVulnerable: false,
-                      hasChanged: true,
-                      signature: 'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)'
-                    }
-                  ],
-                  securityScore: 92,
-                  lastUpdated: new Date().toISOString().split('T')[0],
-                  hasChanges: true,
-                  connections: []
-                }
-              ];
-              
-              // Update protocol with contracts (in a real app we'd use proper state management)
-              setSelectedProtocol({
-                ...selectedProtocol,
-                contracts: mockDexContracts
-              });
-            }
-          }, 1000);
+          if (contracts.length > 0) {
+            // Update protocol with real contract data
+            setSelectedProtocol({
+              ...selectedProtocol,
+              contracts: contracts
+            });
+          } else {
+            // No contracts found
+            console.log('No contracts found for this protocol');
+          }
         } catch (error) {
           console.error('Error fetching protocol details:', error);
+          setContractLoadError('Failed to load contract data for this protocol');
+        } finally {
+          setIsLoadingContracts(false);
         }
       }
     };
 
     fetchProtocolDetails();
-  }, [selectedProtocol, setSelectedProtocol]);
+  }, [selectedProtocol?.id]); // Only re-run if protocol ID changes
 
   const handleBack = () => {
     setSelectedProtocol(null);
@@ -96,6 +77,7 @@ export const Dashboard = () => {
               <h1 className="text-2xl font-bold text-white mb-6">Select Protocol</h1>
               <p className="text-gray-400 mb-8">
                 Choose a DeFi protocol to analyze its smart contracts for security issues and vulnerabilities.
+                Protocols are pulled from DeFi Llama and sorted by Total Value Locked (TVL).
               </p>
               <ProtocolSelector />
             </div>
@@ -153,14 +135,43 @@ export const Dashboard = () => {
 
                 {selectedProtocol.contracts.length === 0 ? (
                   <div className="bg-gray-900 p-8 rounded-lg text-center">
-                    <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                    <h3 className="text-white text-lg font-semibold mb-2">Loading Contract Data</h3>
-                    <p className="text-gray-400 mb-4">
-                      We're analyzing the smart contracts for this protocol. This may take a moment.
-                    </p>
-                    <div className="w-16 h-1 bg-gray-700 rounded-full mx-auto">
-                      <div className="w-1/3 h-1 bg-cyan-500 rounded-full animate-pulse"></div>
-                    </div>
+                    {isLoadingContracts ? (
+                      <>
+                        <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                        <h3 className="text-white text-lg font-semibold mb-2">Loading Contract Data</h3>
+                        <p className="text-gray-400 mb-4">
+                          We're analyzing the smart contracts for this protocol. This may take a moment.
+                        </p>
+                        <div className="w-16 h-1 bg-gray-700 rounded-full mx-auto">
+                          <div className="w-1/3 h-1 bg-cyan-500 rounded-full animate-pulse"></div>
+                        </div>
+                      </>
+                    ) : contractLoadError ? (
+                      <>
+                        <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+                        <h3 className="text-white text-lg font-semibold mb-2">Error Loading Contracts</h3>
+                        <p className="text-gray-400 mb-4">{contractLoadError}</p>
+                        <button 
+                          onClick={() => window.location.reload()}
+                          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+                        >
+                          Retry
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                        <h3 className="text-white text-lg font-semibold mb-2">No Contracts Found</h3>
+                        <p className="text-gray-400 mb-4">
+                          We couldn't find any contracts for this protocol. This could be because:
+                        </p>
+                        <ul className="text-gray-400 text-sm list-disc list-inside mb-4">
+                          <li>The contracts are not verified on the blockchain</li>
+                          <li>The protocol is new or has limited on-chain presence</li>
+                          <li>The protocol's contracts are on a different chain</li>
+                        </ul>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <ProtocolSummary protocol={selectedProtocol} />
@@ -172,4 +183,4 @@ export const Dashboard = () => {
       )}
     </div>
   );
-};
+}; 

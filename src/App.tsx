@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react
 import { Shield, ArrowRight, Lock, Cpu } from 'lucide-react';
 import { BackgroundGrid } from './components/BackgroundGrid';
 import { Navbar } from './components/Navbar';
-import { Dashboard } from './components/Dashboard';
+import { Dashboard } from './Dashboard';
 import { BlockchainContextProvider } from './context/BlockchainContext';
 import { ProtocolProvider } from './context/ProtocolContext';
 

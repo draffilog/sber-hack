@@ -4,7 +4,12 @@ import {
   BlockchainProvider as BlockchainProviderType,
   ConnectionState, 
   ConnectionStatus,
-  blockchainProviderService 
+  blockchainProviderService,
+  contractService,
+  ContractMetadata,
+  ContractABI,
+  ContractSecurityProfile,
+  ContractOwnership
 } from '../services/blockchain';
 import { ChainAdapter } from '../services/blockchain/networks';
 
@@ -21,6 +26,18 @@ interface BlockchainContextType {
   adapter: ChainAdapter | null;
   // Provider access
   provider: BlockchainProviderType | null;
+  // Contract methods
+  getContractCode: (address: string, chainId: number) => Promise<string>;
+  getContractABI: (address: string, chainId: number) => Promise<ContractABI>;
+  getContractMetadata: (address: string, chainId: number) => Promise<ContractMetadata>;
+  detectContractType: (address: string, chainId: number) => Promise<string>;
+  getContractSecurityProfile: (address: string, chainId: number) => Promise<ContractSecurityProfile>;
+  getContractOwnership: (address: string, chainId: number) => Promise<ContractOwnership>;
+  analyzeContractStructure: (abi: any[]) => Promise<{
+    functions: any[];
+    events: any[];
+    stateVariables: any[];
+  }>;
 }
 
 const BlockchainContext = createContext<BlockchainContextType | undefined>(undefined);
@@ -76,6 +93,35 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
     blockchainProviderService.disconnect();
   };
 
+  // Contract service methods
+  const getContractCode = async (address: string, chainId: number) => {
+    return await contractService.getContractCode(address, chainId);
+  };
+
+  const getContractABI = async (address: string, chainId: number) => {
+    return await contractService.getContractABI(address, chainId);
+  };
+
+  const getContractMetadata = async (address: string, chainId: number) => {
+    return await contractService.getContractMetadata(address, chainId);
+  };
+
+  const detectContractType = async (address: string, chainId: number) => {
+    return await contractService.detectContractType(address, chainId);
+  };
+
+  const getContractSecurityProfile = async (address: string, chainId: number) => {
+    return await contractService.getContractSecurityProfile(address, chainId);
+  };
+
+  const getContractOwnership = async (address: string, chainId: number) => {
+    return await contractService.getContractOwnership(address, chainId);
+  };
+
+  const analyzeContractStructure = async (abi: any[]) => {
+    return await contractService.analyzeContractStructure(abi);
+  };
+
   const value = {
     connectionState,
     connectWallet,
@@ -84,6 +130,14 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
     switchNetwork,
     adapter,
     provider: connectionState.provider,
+    // Contract methods
+    getContractCode,
+    getContractABI,
+    getContractMetadata,
+    detectContractType,
+    getContractSecurityProfile,
+    getContractOwnership,
+    analyzeContractStructure,
   };
 
   return (

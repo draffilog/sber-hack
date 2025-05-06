@@ -1,14 +1,14 @@
 import React from 'react';
-import { ArrowLeft, Calendar, AlertTriangle, CheckCircle } from 'lucide-react';
-import { useProtocol } from '../../context/ProtocolContext';
+import { Shield, AlertCircle, ExternalLink } from 'lucide-react';
 import { Protocol } from '../../types';
+import { useProtocol } from '../../context/ProtocolContext';
 
 interface ProtocolSummaryProps {
   protocol: Protocol;
 }
 
-export const ProtocolSummary = ({ protocol }: ProtocolSummaryProps) => {
-  const { setSelectedProtocol } = useProtocol();
+export const ProtocolSummary: React.FC<ProtocolSummaryProps> = ({ protocol }) => {
+  const { setSelectedProtocol, setSelectedContract } = useProtocol();
   
   const vulnerabilityCount = protocol.contracts.reduce(
     (count, contract) => count + contract.functions.filter(fn => fn.isVulnerable).length,
@@ -79,6 +79,73 @@ export const ProtocolSummary = ({ protocol }: ProtocolSummaryProps) => {
           </div>
           <span className="ml-4 font-semibold text-white">{protocol.overallScore}/100</span>
         </div>
+
+        <h3 className="text-lg font-semibold text-white mb-4 mt-8">Smart Contracts</h3>
+        
+        {protocol.contracts.length === 0 ? (
+          <div className="bg-gray-900 p-6 rounded-lg text-center">
+            <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-400">No contract data available for this protocol</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {protocol.contracts.map(contract => (
+              <div 
+                key={contract.id}
+                className="bg-gray-900/70 border border-gray-800 rounded-lg p-4 hover:border-cyan-500 transition-all cursor-pointer"
+                onClick={() => setSelectedContract(contract)}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="text-white font-medium">{contract.name}</h4>
+                    <p className="text-gray-400 text-xs flex items-center">
+                      <span className="font-mono truncate max-w-xs">{contract.address}</span>
+                      <a 
+                        href={`https://bscscan.com/address/${contract.address}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="ml-1 text-cyan-400 hover:text-cyan-300"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    </p>
+                  </div>
+                  <div className="flex items-center">
+                    <Shield size={16} className={`${
+                      contract.securityScore >= 90 ? 'text-green-400' : 
+                      contract.securityScore >= 70 ? 'text-yellow-400' : 'text-red-400'
+                    } mr-1`} />
+                    <span className={`text-xs font-semibold ${
+                      contract.securityScore >= 90 ? 'text-green-400' : 
+                      contract.securityScore >= 70 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {contract.securityScore}
+                    </span>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-gray-400 mb-3">{contract.description}</p>
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex space-x-2">
+                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-800 text-white">
+                      {contract.type}
+                    </span>
+                    {contract.hasChanges && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-yellow-900/30 text-yellow-400">
+                        Recent Changes
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Updated: {contract.lastUpdated}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

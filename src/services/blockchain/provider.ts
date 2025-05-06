@@ -13,6 +13,13 @@ import {
 } from './types';
 import { ChainAdapter, chainAdapterRegistry } from './networks';
 
+// Define the Window interface with ethereum property
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 /**
  * BlockchainProviderService handles connections to different blockchain networks
  * through various provider types (MetaMask, direct RPC, etc.)
@@ -34,9 +41,13 @@ export class BlockchainProviderService {
     // Check if provider is available in browser - but wait until the page is fully loaded
     if (typeof window !== 'undefined') {
       // Wait for the window to fully load before checking for wallet
-      window.addEventListener('DOMContentLoaded', () => {
+      if (document.readyState === 'complete') {
         this.checkForBrowserProvider();
-      });
+      } else {
+        window.addEventListener('DOMContentLoaded', () => {
+          this.checkForBrowserProvider();
+        });
+      }
     }
   }
 
@@ -48,8 +59,9 @@ export class BlockchainProviderService {
     if (typeof window === 'undefined') return null;
     
     try {
-      // Access ethereum via getter to avoid property setting issues
-      return window.ethereum || null;
+      // Safely access ethereum property without setting it
+      const ethereum = window.ethereum;
+      return ethereum || null;
     } catch (error) {
       console.warn('Error accessing window.ethereum:', error);
       return null;
@@ -243,7 +255,43 @@ export class BlockchainProviderService {
   public getAdapter(): ChainAdapter | null {
     return this.activeAdapter;
   }
-  
+
+  /**
+   * Get an adapter for a specific chain ID
+   */
+  public getAdapterForChain(chainId: number): ChainAdapter | null {
+    // If we're connected to this chain already, return the active adapter
+    if (this.connectionState.chainId === chainId && this.activeAdapter) {
+      return this.activeAdapter;
+    }
+
+    // Otherwise try to create an adapter for this chain
+    try {
+      const network = Object.keys(NETWORK_CONFIGS).find(
+        key => NETWORK_CONFIGS[key as BlockchainNetwork].chainId === chainId
+      ) as BlockchainNetwork | undefined;
+
+      if (network) {
+        // Create a provider for this network
+        const config = NETWORK_CONFIGS[network];
+        const provider = new JsonRpcProvider(config.rpcUrl);
+        
+        // Create and return an adapter
+        return chainAdapterRegistry.createAdapter(network, provider);
+      }
+      
+      // If no matching network found, try to create an adapter with the current provider
+      if (this.provider) {
+        return chainAdapterRegistry.findAdapterForChainId(chainId, this.provider);
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn(`Could not create adapter for chain ID ${chainId}:`, error);
+      return null;
+    }
+  }
+
   /**
    * Switch to a different network
    */
@@ -331,20 +379,43 @@ export class BlockchainProviderService {
   }
 
   /**
-   * Set up event listeners for the browser wallet
+   * Set up event listeners for account and chain changes
    */
   private setupEventListeners(ethereum: any): void {
+    if (!ethereum) return;
+
     try {
-      // Handle account changes
-      ethereum.on('accountsChanged', this.handleAccountsChanged.bind(this));
-      
-      // Handle chain changes
-      ethereum.on('chainChanged', this.handleChainChanged.bind(this));
-      
-      // Handle disconnection
-      ethereum.on('disconnect', this.handleDisconnect.bind(this));
+      // Safely add event listeners
+      if (ethereum.on) {
+        // Handle account changes
+        ethereum.on('accountsChanged', (accounts: string[]) => {
+          try {
+            this.handleAccountsChanged(accounts).catch(console.error);
+          } catch (error) {
+            console.error('Error in accountsChanged handler:', error);
+          }
+        });
+
+        // Handle chain changes
+        ethereum.on('chainChanged', (chainIdHex: string) => {
+          try {
+            this.handleChainChanged(chainIdHex).catch(console.error);
+          } catch (error) {
+            console.error('Error in chainChanged handler:', error);
+          }
+        });
+
+        // Handle disconnect
+        ethereum.on('disconnect', () => {
+          try {
+            this.handleDisconnect();
+          } catch (error) {
+            console.error('Error in disconnect handler:', error);
+          }
+        });
+      }
     } catch (error) {
-      console.warn('Could not set up wallet event listeners:', error);
+      console.error('Error setting up event listeners:', error);
     }
   }
 
@@ -438,13 +509,6 @@ export class BlockchainProviderService {
         console.error('Error in connection listener:', error);
       }
     });
-  }
-}
-
-// Add window.ethereum type for TypeScript
-declare global {
-  interface Window {
-    ethereum?: any;
   }
 }
 
