@@ -6,6 +6,7 @@ import {
   ConnectionStatus,
   blockchainProviderService 
 } from '../services/blockchain';
+import { ChainAdapter } from '../services/blockchain/networks';
 
 interface BlockchainContextType {
   // Connection state
@@ -14,6 +15,10 @@ interface BlockchainContextType {
   connectWallet: () => Promise<void>;
   connectRpc: (network: BlockchainNetwork) => Promise<void>;
   disconnect: () => void;
+  // Network methods
+  switchNetwork: (network: BlockchainNetwork) => Promise<boolean>;
+  // Adapter access
+  adapter: ChainAdapter | null;
   // Provider access
   provider: BlockchainProviderType | null;
 }
@@ -36,10 +41,18 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
   const [connectionState, setConnectionState] = useState<ConnectionState>(
     blockchainProviderService.getConnectionState()
   );
+  
+  const [adapter, setAdapter] = useState<ChainAdapter | null>(
+    blockchainProviderService.getAdapter()
+  );
 
   useEffect(() => {
     // Add listener for connection state changes
-    blockchainProviderService.addConnectionListener(setConnectionState);
+    blockchainProviderService.addConnectionListener((state) => {
+      setConnectionState(state);
+      // Update adapter when connection state changes
+      setAdapter(blockchainProviderService.getAdapter());
+    });
     
     // Clean up listener when component unmounts
     return () => {
@@ -54,6 +67,10 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
   const connectRpc = async (network: BlockchainNetwork) => {
     await blockchainProviderService.connectRpcProvider(network);
   };
+  
+  const switchNetwork = async (network: BlockchainNetwork) => {
+    return await blockchainProviderService.switchNetwork(network);
+  };
 
   const disconnect = () => {
     blockchainProviderService.disconnect();
@@ -64,6 +81,8 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
     connectWallet,
     connectRpc,
     disconnect,
+    switchNetwork,
+    adapter,
     provider: connectionState.provider,
   };
 

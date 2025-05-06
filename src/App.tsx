@@ -1,9 +1,20 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { Shield, ArrowRight, Lock, Cpu } from 'lucide-react';
 import { BackgroundGrid } from './components/BackgroundGrid';
 import { Navbar } from './components/Navbar';
+import { Dashboard } from './components/Dashboard';
+import { BlockchainContextProvider } from './context/BlockchainContext';
+import { ProtocolProvider } from './context/ProtocolContext';
 
-function App() {
+// Landing page component
+const LandingPage = () => {
+  const navigate = useNavigate();
+  
+  const handleStartScanning = () => {
+    navigate('/dashboard');
+  };
+  
   return (
     <div className="min-h-screen bg-[#0A0F16] text-white relative overflow-hidden">
       <BackgroundGrid />
@@ -32,7 +43,10 @@ function App() {
             </p>
             
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button className="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-gray-900 rounded-lg font-bold transition-all transform hover:scale-105 flex items-center">
+              <button 
+                className="px-8 py-4 bg-cyan-500 hover:bg-cyan-400 text-gray-900 rounded-lg font-bold transition-all transform hover:scale-105 flex items-center"
+                onClick={handleStartScanning}
+              >
                 Start Scanning
                 <ArrowRight className="ml-2 w-5 h-5" />
               </button>
@@ -76,6 +90,36 @@ function App() {
         </main>
       </div>
     </div>
+  );
+};
+
+// Dashboard page wrapper with required context providers
+const DashboardPage = () => {
+  return (
+    <div className="min-h-screen bg-[#0A0F16] text-white">
+      <BackgroundGrid />
+      <div className="relative z-10">
+        <Navbar />
+        <div className="container mx-auto px-4 pt-20 pb-32">
+          <BlockchainContextProvider>
+            <ProtocolProvider>
+              <Dashboard />
+            </ProtocolProvider>
+          </BlockchainContextProvider>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+      </Routes>
+    </Router>
   );
 }
 

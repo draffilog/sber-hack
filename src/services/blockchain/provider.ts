@@ -11,6 +11,7 @@ import {
   ConnectionStatus, 
   NETWORK_CONFIGS 
 } from './types';
+import { ChainAdapter, chainAdapterRegistry } from './networks';
 
 /**
  * BlockchainProviderService handles connections to different blockchain networks
@@ -27,6 +28,7 @@ export class BlockchainProviderService {
     error: null,
   };
   private connectionListeners: Array<(state: ConnectionState) => void> = [];
+  private activeAdapter: ChainAdapter | null = null;
 
   constructor() {
     // Check if provider is available in browser - but wait until the page is fully loaded
@@ -100,10 +102,18 @@ export class BlockchainProviderService {
 
         this.provider = browserProvider;
 
+        // Create adapter for this chain
+        const chainId = Number(network.chainId);
+        this.activeAdapter = chainAdapterRegistry.findAdapterForChainId(chainId, browserProvider);
+        
+        if (!this.activeAdapter) {
+          console.warn(`No adapter available for chain ID ${chainId}. Using direct provider.`);
+        }
+
         this.updateConnectionState({
           status: ConnectionStatus.CONNECTED,
           account: address,
-          chainId: Number(network.chainId),
+          chainId: chainId,
           network: network,
           provider: browserProvider,
           error: null,
@@ -157,6 +167,9 @@ export class BlockchainProviderService {
         
         this.provider = rpcProvider;
         
+        // Create adapter for this network
+        this.activeAdapter = chainAdapterRegistry.createAdapter(network, rpcProvider);
+        
         this.updateConnectionState({
           status: ConnectionStatus.CONNECTED,
           account: null, // RPC providers don't have accounts unless a private key is provided
@@ -191,6 +204,12 @@ export class BlockchainProviderService {
         this.removeEventListeners(ethereum);
       }
       
+      // Disconnect the active adapter if present
+      if (this.activeAdapter) {
+        this.activeAdapter.disconnect();
+        this.activeAdapter = null;
+      }
+      
       this.provider = null;
       
       this.updateConnectionState({
@@ -216,6 +235,83 @@ export class BlockchainProviderService {
    */
   public getConnectionState(): ConnectionState {
     return { ...this.connectionState };
+  }
+  
+  /**
+   * Get the active chain adapter
+   */
+  public getAdapter(): ChainAdapter | null {
+    return this.activeAdapter;
+  }
+  
+  /**
+   * Switch to a different network
+   */
+  public async switchNetwork(network: BlockchainNetwork): Promise<boolean> {
+    try {
+      // If we're not connected, connect to this network
+      if (this.connectionState.status !== ConnectionStatus.CONNECTED) {
+        await this.connectRpcProvider(network);
+        return true;
+      }
+      
+      // If we're connected via browser wallet, request network switch
+      if (this.provider instanceof BrowserProvider) {
+        const ethereum = this.getEthereumProvider();
+        if (!ethereum) {
+          throw new Error('Browser provider not available');
+        }
+        
+        const networkConfig = NETWORK_CONFIGS[network];
+        
+        try {
+          // Request wallet to switch to this network
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: `0x${networkConfig.chainId.toString(16)}` }],
+          });
+          
+          // Wallet will emit chainChanged event, which we'll handle
+          return true;
+        } catch (error: any) {
+          // If the network is not added to the wallet, add it
+          if (error.code === 4902) {
+            try {
+              await ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [
+                  {
+                    chainId: `0x${networkConfig.chainId.toString(16)}`,
+                    chainName: networkConfig.name,
+                    nativeCurrency: networkConfig.nativeCurrency,
+                    rpcUrls: [networkConfig.rpcUrl],
+                    blockExplorerUrls: [networkConfig.blockExplorerUrl],
+                  },
+                ],
+              });
+              
+              // Try switching again
+              await ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: `0x${networkConfig.chainId.toString(16)}` }],
+              });
+              
+              return true;
+            } catch (addError) {
+              throw new Error(`Failed to add network: ${addError instanceof Error ? addError.message : 'Unknown error'}`);
+            }
+          }
+          throw error;
+        }
+      } else {
+        // For RPC providers, we need to create a new connection
+        await this.connectRpcProvider(network);
+        return true;
+      }
+    } catch (error) {
+      console.error(`Error switching to network ${network}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -294,9 +390,22 @@ export class BlockchainProviderService {
     if (this.provider instanceof BrowserProvider) {
       try {
         const network = await this.provider.getNetwork();
+        const chainId = Number(network.chainId);
+        
+        // Update the chain adapter based on the new network
+        if (this.activeAdapter) {
+          // Check if current adapter is compatible with the new chain
+          if (!this.activeAdapter.isCompatible(chainId)) {
+            // Current adapter is not compatible, create a new one
+            this.activeAdapter = chainAdapterRegistry.findAdapterForChainId(chainId, this.provider);
+          }
+        } else {
+          // No active adapter, create one
+          this.activeAdapter = chainAdapterRegistry.findAdapterForChainId(chainId, this.provider);
+        }
         
         this.updateConnectionState({
-          chainId: Number(network.chainId),
+          chainId: chainId,
           network: network,
         });
       } catch (error) {
