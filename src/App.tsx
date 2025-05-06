@@ -6,6 +6,7 @@ import { Navbar } from './components/Navbar';
 import { Dashboard } from './Dashboard';
 import { BlockchainContextProvider } from './context/BlockchainContext';
 import { ProtocolProvider } from './context/ProtocolContext';
+import { StablecoinsProvider } from './context/StablecoinsContext';
 
 // Landing page component
 const LandingPage = () => {
@@ -103,7 +104,9 @@ const DashboardPage = () => {
         <div className="container mx-auto px-4 pt-20 pb-32">
           <BlockchainContextProvider>
             <ProtocolProvider>
-              <Dashboard />
+              <StablecoinsProvider>
+                <Dashboard />
+              </StablecoinsProvider>
             </ProtocolProvider>
           </BlockchainContextProvider>
         </div>

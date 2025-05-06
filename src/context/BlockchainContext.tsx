@@ -9,7 +9,11 @@ import {
   ContractMetadata,
   ContractABI,
   ContractSecurityProfile,
-  ContractOwnership
+  ContractOwnership,
+  blockchainCacheService,
+  blockchainUtilsService,
+  AddressValidationResult,
+  GasEstimationOptions
 } from '../services/blockchain';
 import { ChainAdapter } from '../services/blockchain/networks';
 
@@ -38,6 +42,45 @@ interface BlockchainContextType {
     events: any[];
     stateVariables: any[];
   }>;
+  // Cache methods
+  clearContractCache: (address?: string, chainId?: number) => void;
+  getCacheStats: () => { size: number, hits: number, misses: number, evictions: number };
+  // Utility methods
+  utils: {
+    // Address utilities
+    validateAddress: (address: string) => AddressValidationResult;
+    formatAddress: (address: string, prefixLength?: number, suffixLength?: number) => string;
+    // Value formatting
+    formatNumber: (value: number | string, decimals?: number) => string;
+    truncateString: (str: string, maxLength?: number) => string;
+    formatTimestamp: (timestamp: number) => string;
+    // Unit conversions
+    weiToEther: (wei: bigint | string) => string;
+    etherToWei: (ether: string | number) => bigint;
+    weiToGwei: (wei: bigint | string) => string;
+    gweiToWei: (gwei: string | number) => bigint;
+    // ENS resolution
+    resolveAddressToEns: (address: string) => Promise<string | null>;
+    resolveEnsToAddress: (ensName: string) => Promise<string | null>;
+    // Gas estimation
+    estimateGas: (
+      to: string,
+      data?: string,
+      value?: bigint,
+      options?: Partial<GasEstimationOptions>
+    ) => Promise<GasEstimationOptions>;
+    // Error handling
+    translateError: (error: any) => Error;
+    // Explorer URLs
+    getTransactionExplorerUrl: (txHash: string, chainId: number) => string;
+    getAddressExplorerUrl: (address: string, chainId: number) => string;
+    // Data conversion
+    hexToText: (hex: string) => string;
+    textToHex: (text: string) => string;
+    // Transaction helpers
+    formatTxHash: (txHash: string) => string;
+    extractMethodSignature: (data: string) => string;
+  };
 }
 
 const BlockchainContext = createContext<BlockchainContextType | undefined>(undefined);
@@ -122,6 +165,56 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
     return await contractService.analyzeContractStructure(abi);
   };
 
+  // Cache methods
+  const clearContractCache = (address?: string, chainId?: number) => {
+    if (address && chainId) {
+      // Clear cache for specific contract
+      blockchainCacheService.invalidateForAddress(address);
+    } else if (chainId) {
+      // Clear cache for specific chain
+      blockchainCacheService.invalidateForChain(chainId);
+    } else {
+      // Clear all contract cache
+      blockchainCacheService.invalidate('contract-');
+    }
+  };
+
+  const getCacheStats = () => {
+    return blockchainCacheService.getStats();
+  };
+
+  // Utility methods
+  const utils = {
+    // Address utilities
+    validateAddress: blockchainUtilsService.validateAddress.bind(blockchainUtilsService),
+    formatAddress: blockchainUtilsService.formatAddress.bind(blockchainUtilsService),
+    // Value formatting
+    formatNumber: blockchainUtilsService.formatNumber.bind(blockchainUtilsService),
+    truncateString: blockchainUtilsService.truncateString.bind(blockchainUtilsService),
+    formatTimestamp: blockchainUtilsService.formatTimestamp.bind(blockchainUtilsService),
+    // Unit conversions
+    weiToEther: blockchainUtilsService.weiToEther.bind(blockchainUtilsService),
+    etherToWei: blockchainUtilsService.etherToWei.bind(blockchainUtilsService),
+    weiToGwei: blockchainUtilsService.weiToGwei.bind(blockchainUtilsService),
+    gweiToWei: blockchainUtilsService.gweiToWei.bind(blockchainUtilsService),
+    // ENS resolution
+    resolveAddressToEns: blockchainUtilsService.resolveAddressToEns.bind(blockchainUtilsService),
+    resolveEnsToAddress: blockchainUtilsService.resolveEnsToAddress.bind(blockchainUtilsService),
+    // Gas estimation
+    estimateGas: blockchainUtilsService.estimateGas.bind(blockchainUtilsService),
+    // Error handling
+    translateError: blockchainUtilsService.translateError.bind(blockchainUtilsService),
+    // Explorer URLs
+    getTransactionExplorerUrl: blockchainUtilsService.getTransactionExplorerUrl.bind(blockchainUtilsService),
+    getAddressExplorerUrl: blockchainUtilsService.getAddressExplorerUrl.bind(blockchainUtilsService),
+    // Data conversion
+    hexToText: blockchainUtilsService.hexToText.bind(blockchainUtilsService),
+    textToHex: blockchainUtilsService.textToHex.bind(blockchainUtilsService),
+    // Transaction helpers
+    formatTxHash: blockchainUtilsService.formatTxHash.bind(blockchainUtilsService),
+    extractMethodSignature: blockchainUtilsService.extractMethodSignature.bind(blockchainUtilsService),
+  };
+
   const value = {
     connectionState,
     connectWallet,
@@ -138,6 +231,11 @@ export const BlockchainContextProvider = ({ children }: BlockchainContextProvide
     getContractSecurityProfile,
     getContractOwnership,
     analyzeContractStructure,
+    // Cache methods
+    clearContractCache,
+    getCacheStats,
+    // Utility methods
+    utils,
   };
 
   return (

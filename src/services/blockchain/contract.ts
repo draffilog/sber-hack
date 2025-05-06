@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { ChainAdapter } from './networks';
 import { blockchainProviderService } from './provider';
+import { blockchainCacheService } from './cache';
 
 export interface ContractMetadata {
   name?: string;
@@ -62,6 +63,19 @@ export class ContractService {
    * Get contract bytecode from the blockchain
    */
   async getContractCode(address: string, chainId: number): Promise<string> {
+    // Generate cache key
+    const cacheKey = blockchainCacheService.generateKey({
+      prefix: 'contract-code',
+      address,
+      chainId
+    });
+
+    // Try to get from cache first
+    const cachedCode = blockchainCacheService.get<string>(cacheKey);
+    if (cachedCode) {
+      return cachedCode;
+    }
+
     try {
       const adapter = this.getAdapterForChain(chainId);
       if (!adapter) {
@@ -69,7 +83,14 @@ export class ContractService {
       }
 
       const provider = adapter.getProvider();
-      return await provider.getCode(address);
+      const code = await provider.getCode(address);
+      
+      // Cache the result
+      blockchainCacheService.set(cacheKey, code, {
+        ttl: 30 * 60 * 1000, // Code rarely changes, 30 minutes cache
+      });
+      
+      return code;
     } catch (error) {
       console.error(`Error fetching contract code for ${address} on chain ${chainId}:`, error);
       throw error;
@@ -80,6 +101,19 @@ export class ContractService {
    * Get contract ABI using the appropriate blockchain explorer API
    */
   async getContractABI(address: string, chainId: number): Promise<ContractABI> {
+    // Generate cache key
+    const cacheKey = blockchainCacheService.generateKey({
+      prefix: 'contract-abi',
+      address,
+      chainId
+    });
+
+    // Try to get from cache first
+    const cachedABI = blockchainCacheService.get<ContractABI>(cacheKey);
+    if (cachedABI) {
+      return cachedABI;
+    }
+    
     try {
       // First check if explorer API key is available
       const apiKey = this.explorerApiKeys[chainId];
@@ -104,11 +138,19 @@ export class ContractService {
       if (data.status === '1' && data.result) {
         try {
           const abi = JSON.parse(data.result);
-          return {
+          const result = {
             abi,
             verified: true,
             source: `${this.getExplorerName(chainId)} API`
           };
+          
+          // Cache the result
+          blockchainCacheService.set(cacheKey, result, {
+            ttl: 24 * 60 * 60 * 1000, // ABIs rarely change, 24 hours cache
+            persistToLocalStorage: true
+          });
+          
+          return result;
         } catch (e) {
           throw new Error(`Error parsing ABI JSON: ${e.message}`);
         }
@@ -130,6 +172,25 @@ export class ContractService {
     events: any[];
     stateVariables: any[];
   }> {
+    // Generate cache key based on the hash of the ABI
+    const abiString = JSON.stringify(abi);
+    const abiHash = this.hashString(abiString);
+    const cacheKey = blockchainCacheService.generateKey({
+      prefix: 'contract-structure',
+      additionalParams: { hash: abiHash }
+    });
+
+    // Try to get from cache
+    const cachedStructure = blockchainCacheService.get<{
+      functions: any[];
+      events: any[];
+      stateVariables: any[];
+    }>(cacheKey);
+    
+    if (cachedStructure) {
+      return cachedStructure;
+    }
+    
     // Categorize the ABI elements
     const functions = abi.filter(item => 
       item.type === 'function' || 
@@ -147,13 +208,33 @@ export class ContractService {
       item.outputs?.length === 1
     );
     
-    return { functions, events, stateVariables };
+    const result = { functions, events, stateVariables };
+    
+    // Cache the result
+    blockchainCacheService.set(cacheKey, result, {
+      ttl: 24 * 60 * 60 * 1000, // Structure analysis rarely changes, 24 hours cache
+    });
+    
+    return result;
   }
 
   /**
    * Detect the type of contract based on code and ABI
    */
   async detectContractType(address: string, chainId: number): Promise<string> {
+    // Generate cache key
+    const cacheKey = blockchainCacheService.generateKey({
+      prefix: 'contract-type',
+      address,
+      chainId
+    });
+
+    // Try to get from cache
+    const cachedType = blockchainCacheService.get<string>(cacheKey);
+    if (cachedType) {
+      return cachedType;
+    }
+    
     try {
       const abi = await this.getContractABI(address, chainId);
       
@@ -161,53 +242,51 @@ export class ContractService {
         return 'Unknown';
       }
       
+      let contractType = 'Unknown';
+      
       // Check for ERC20 interface
       if (
         this.hasFunction(abi.abi, 'transfer', ['address', 'uint256']) &&
         this.hasFunction(abi.abi, 'balanceOf', ['address']) &&
         this.hasFunction(abi.abi, 'totalSupply')
       ) {
-        return 'ERC20';
+        contractType = 'ERC20';
       }
       
       // Check for ERC721 interface
-      if (
+      else if (
         this.hasFunction(abi.abi, 'ownerOf', ['uint256']) &&
         this.hasFunction(abi.abi, 'balanceOf', ['address']) &&
         this.hasFunction(abi.abi, 'transferFrom', ['address', 'address', 'uint256'])
       ) {
-        return 'ERC721';
+        contractType = 'ERC721';
       }
       
       // Check for DEX-like contracts (PancakeSwap/Uniswap style)
-      if (
+      else if (
         this.hasFunction(abi.abi, 'swapExactTokensForTokens') ||
         this.hasFunction(abi.abi, 'addLiquidity') ||
         this.hasFunction(abi.abi, 'removeLiquidity')
       ) {
-        return 'DEX';
+        contractType = 'DEX';
       }
       
       // Check for lending protocol interfaces
-      if (
+      else if (
         this.hasFunction(abi.abi, 'borrow') ||
         this.hasFunction(abi.abi, 'repay') ||
         this.hasFunction(abi.abi, 'deposit') ||
         this.hasFunction(abi.abi, 'withdraw')
       ) {
-        return 'Lending';
+        contractType = 'Lending';
       }
       
-      // Check for proxy patterns
-      if (
-        this.hasFunction(abi.abi, 'implementation') ||
-        this.hasFunction(abi.abi, 'upgradeTo') ||
-        this.hasFunction(abi.abi, 'upgradeToAndCall')
-      ) {
-        return 'Proxy';
-      }
+      // Cache the result
+      blockchainCacheService.set(cacheKey, contractType, {
+        ttl: 24 * 60 * 60 * 1000, // Contract type rarely changes, 24 hours cache
+      });
       
-      return 'Generic';
+      return contractType;
     } catch (error) {
       console.error(`Error detecting contract type for ${address} on chain ${chainId}:`, error);
       return 'Unknown';
@@ -358,9 +437,22 @@ export class ContractService {
   }
 
   /**
-   * Get contract metadata
+   * Get contract metadata including creation date, creator
    */
   async getContractMetadata(address: string, chainId: number): Promise<ContractMetadata> {
+    // Generate cache key
+    const cacheKey = blockchainCacheService.generateKey({
+      prefix: 'contract-metadata',
+      address,
+      chainId
+    });
+
+    // Try to get from cache
+    const cachedMetadata = blockchainCacheService.get<ContractMetadata>(cacheKey);
+    if (cachedMetadata) {
+      return cachedMetadata;
+    }
+    
     try {
       const adapter = this.getAdapterForChain(chainId);
       if (!adapter) {
@@ -428,6 +520,12 @@ export class ContractService {
       } catch (e) {
         console.warn(`Could not retrieve creation info for ${address}:`, e);
       }
+      
+      // Cache the result
+      blockchainCacheService.set(cacheKey, metadata, {
+        ttl: 24 * 60 * 60 * 1000, // Metadata rarely changes, 24 hours cache
+        persistToLocalStorage: true
+      });
       
       return metadata;
     } catch (error) {
@@ -513,6 +611,17 @@ export class ContractService {
       item.stateMutability !== 'view' && 
       item.stateMutability !== 'pure'
     );
+  }
+
+  // Create a simple hash function for strings
+  private hashString(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(16);
   }
 }
 
