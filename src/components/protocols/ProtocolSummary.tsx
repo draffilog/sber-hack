@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, AlertCircle, ExternalLink } from 'lucide-react';
+import { Shield, AlertCircle, ExternalLink, ArrowLeft, Calendar, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Protocol } from '../../types';
 import { useProtocol } from '../../context/ProtocolContext';
 
